@@ -1,0 +1,342 @@
+---
+title: "HCP tasks trait nuisance analysis"
+output: pdf_document
+fontsize: 10pt
+date: "`r Sys.Date()`"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options("width"=95)
+options(scipen = 999, digits = 7) 
+```
+
+
+
+```{r load packages and data, echo= FALSE, include=FALSE}
+
+#setwd("/")
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(dplyr)
+library(tinytex)
+
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(MetBrewer)
+library(viridis)
+
+library(lmerTest)
+library(emmeans)
+library(MASS)
+
+df<-read.csv("/hcp_task_trait/data/hcp_analysis_df_spearman.csv", sep = ",")
+
+df$sub<-as.factor(c(df$sub))
+df$cont<-gsub("tom", "ToM", df$cont)
+df$cont<-gsub("rel", "relational", df$cont)
+df$cont<-gsub("avg", "motor", df$cont)
+df$cont<-gsub("0bk", "0back", df$cont)
+df$cont<-gsub("2bk", "2back", df$cont)
+cont_list<- levels(as.factor(df$cont))
+
+df$Gender<-as.factor(c(df$Gender))
+df$cont<-as.factor(c(df$cont))
+df$Mother_ID<-as.factor(c(df$Mother_ID))
+df$Father_ID<-as.factor(c(df$Father_ID))
+df$Family_ID<-as.factor(c(df$Family_ID))
+df$Zygosity<-as.factor(c(df$Zygosity))
+
+
+df$corr_g1<-as.numeric(df$corr_g1)
+df$corr_g2<-as.numeric(df$corr_g2)
+df$corr_g3<-as.numeric(df$corr_g3)
+df$motion<-as.numeric(df$motion)
+
+
+
+my_pal<- c( "orchid1","maroon", "dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", "black",
+            "gold1", "skyblue2", "palegreen2", "#FDBF6F", "gray70", "darkturquoise", "darkorange4", "brown") 
+
+
+fig_path <- "/hcp_task_trait/figures/"
+
+
+```
+
+```{r create sumdf to keep means, sd se etc handy, echo=FALSE}
+my_sum1 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g1)),
+    sd=sd(as.numeric(corr_g1))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+
+my_sum2 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g2)),
+    sd=sd(as.numeric(corr_g2))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+my_sum3 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g3)),
+    sd=sd(as.numeric(corr_g3))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+sumdf<-data.frame(cont=my_sum1$cont,
+                   g1_mean=my_sum1$mean, g2_mean=my_sum2$mean, g3_mean=my_sum3$mean,
+                   g1_sd=my_sum1$sd, g2_sd=my_sum2$sd, g3_sd=my_sum3$sd,
+                   g1_se=my_sum1$se, g2_se=my_sum2$se, g3_se=my_sum3$se)
+```
+
+
+## Simple models
+```{r, echo=T}
+
+
+mod1<-lmerTest::lmer(corr_g1~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+mod2<-lmerTest::lmer(corr_g2~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+
+
+mod3<-lmerTest::lmer(corr_g3~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+```
+
+\newpage
+
+```{r, echo=T}
+anova1<-anova(mod1)
+p1<-kable(anova(mod1), "simple",  align= "lrrrrrr", digits = 7 )
+
+
+```
+
+\newpage
+
+```{r, echo=T}
+anova2<-anova(mod2)
+p2<-kable(anova(mod2), "simple",  align= "lrrrrrr", digits = 7 )
+```
+
+\newpage
+
+```{r, echo=T}
+anova3<-anova(mod3)
+p3<-kable(anova(mod3), "simple",  align= "lrrrrrr", digits = 7 )
+
+```
+
+```{r, echo=FALSE}
+
+emm_options(lmerTest.limit = 13081, lmer.df = "satterthwaite")
+em1cont<-emmeans(mod1, ~ cont, type = "response")
+em1contpairs<-pairs(em1cont, infer = TRUE)
+
+
+em1NEO_N<-as.data.frame(emtrends(mod1, "cont",  var="Neuroticism", adjust="none", infer = TRUE))
+em1NEO_O<-as.data.frame(emtrends(mod1, "cont", var="Openness", adjust = "none", infer = TRUE))
+em1NEO_C<-as.data.frame(emtrends(mod1, "cont",  var="Conscientiousness", adjust="none", infer = TRUE))
+em1NEO_E<-as.data.frame(emtrends(mod1, "cont", var="Extraversion", adjust = "none", infer = TRUE))
+em1NEO_A<-as.data.frame(emtrends(mod1, "cont",  var="Agreeableness", adjust = "none", infer = TRUE))
+
+``` 
+
+```{r, echo=FALSE}
+emm_options(lmerTest.limit = 13201, lmer.df = "satterthwaite")
+em2cont<-emmeans(mod2, ~ cont, type = "response")
+em2contpairs<-pairs(em2cont, adjust = "bonferroni", infer = TRUE)
+
+em2NEO_N<-as.data.frame(emtrends(mod2, "cont",  var="Neuroticism", adjust="none", infer = TRUE))
+em2NEO_O<-as.data.frame(emtrends(mod2, "cont", var="Openness", adjust = "none", infer = TRUE))
+em2NEO_C<-as.data.frame(emtrends(mod2, "cont",  var="Conscientiousness", adjust="none", infer = TRUE))
+em2NEO_E<-as.data.frame(emtrends(mod2, "cont", var="Extraversion", adjust = "none", infer = TRUE))
+em2NEO_A<-as.data.frame(emtrends(mod2, "cont",  var="Agreeableness", adjust = "none", infer = TRUE))
+
+```
+
+
+```{r, echo=FALSE}
+emm_options(lmerTest.limit = 13201, lmer.df = "satterthwaite")
+em3cont<-emmeans(mod3, ~ cont, type = "response")
+em3contpairs<-pairs(em3cont, adjust = "bonferroni", infer = TRUE)
+
+em3NEO_N<-as.data.frame(emtrends(mod3, "cont",  var="Neuroticism", adjust="none", infer = TRUE))
+em3NEO_O<-as.data.frame(emtrends(mod3, "cont", var="Openness", adjust = "none", infer = TRUE))
+em3NEO_C<-as.data.frame(emtrends(mod3, "cont",  var="Conscientiousness", adjust="none", infer = TRUE))
+em3NEO_E<-as.data.frame(emtrends(mod3, "cont", var="Extraversion", adjust = "none", infer = TRUE))
+em3NEO_A<-as.data.frame(emtrends(mod3, "cont",  var="Agreeableness", adjust = "none", infer = TRUE))
+
+```
+
+\newpage
+## emtrends plot
+```{r, echo=FALSE}
+
+# add "trait" variable
+em1NEO_N$trait<-"Neuroticism"
+em1NEO_O$trait<-"Openness"
+em1NEO_C$trait<-"Conscientiousness"
+em1NEO_E$trait<-"Extraversion"
+em1NEO_A$trait<-"Agreeableness"
+
+em2NEO_N$trait<-"Neuroticism"
+em2NEO_O$trait<-"Openness"
+em2NEO_C$trait<-"Conscientiousness"
+em2NEO_E$trait<-"Extraversion"
+em2NEO_A$trait<-"Agreeableness"
+
+em3NEO_N$trait<-"Neuroticism"
+em3NEO_O$trait<-"Openness"
+em3NEO_C$trait<-"Conscientiousness"
+em3NEO_E$trait<-"Extraversion"
+em3NEO_A$trait<-"Agreeableness"
+
+# change variable name to "trend" 
+colnames(em1NEO_N)[2]<-"trend"
+colnames(em1NEO_O)[2]<-"trend"
+colnames(em1NEO_C)[2]<-"trend"
+colnames(em1NEO_E)[2]<-"trend"
+colnames(em1NEO_A)[2]<-"trend"
+
+colnames(em2NEO_N)[2]<-"trend"
+colnames(em2NEO_O)[2]<-"trend"
+colnames(em2NEO_C)[2]<-"trend"
+colnames(em2NEO_E)[2]<-"trend"
+colnames(em2NEO_A)[2]<-"trend"
+
+colnames(em3NEO_N)[2]<-"trend"
+colnames(em3NEO_O)[2]<-"trend"
+colnames(em3NEO_C)[2]<-"trend"
+colnames(em3NEO_E)[2]<-"trend"
+colnames(em3NEO_A)[2]<-"trend"
+
+#reorder according to trend
+em1NEO_N<-em1NEO_N[order(em1NEO_N$trend),]
+em1NEO_O<-em1NEO_O[order(em1NEO_O$trend),]
+em1NEO_C<-em1NEO_C[order(em1NEO_C$trend),]
+em1NEO_E<-em1NEO_E[order(em1NEO_E$trend),]
+em1NEO_A<-em1NEO_A[order(em1NEO_A$trend),]
+
+em2NEO_N<-em2NEO_N[order(em2NEO_N$trend),]
+em2NEO_O<-em2NEO_O[order(em2NEO_O$trend),]
+em2NEO_C<-em2NEO_C[order(em2NEO_C$trend),]
+em2NEO_E<-em2NEO_E[order(em2NEO_E$trend),]
+em2NEO_A<-em2NEO_A[order(em2NEO_A$trend),]
+
+em3NEO_N<-em3NEO_N[order(em3NEO_N$trend),]
+em3NEO_O<-em3NEO_O[order(em3NEO_O$trend),]
+em3NEO_C<-em3NEO_C[order(em3NEO_C$trend),]
+em3NEO_E<-em3NEO_E[order(em3NEO_E$trend),]
+em3NEO_A<-em3NEO_A[order(em3NEO_A$trend),]
+
+# add "dimension" variable
+em1NEO_N$dimension<-"D1"
+em1NEO_O$dimension<-"D1"
+em1NEO_C$dimension<-"D1"
+em1NEO_E$dimension<-"D1"
+em1NEO_A$dimension<-"D1"
+
+em2NEO_N$dimension<-"D2"
+em2NEO_O$dimension<-"D2"
+em2NEO_C$dimension<-"D2"
+em2NEO_E$dimension<-"D2"
+em2NEO_A$dimension<-"D2"
+
+em3NEO_N$dimension<-"D3"
+em3NEO_O$dimension<-"D3"
+em3NEO_C$dimension<-"D3"
+em3NEO_E$dimension<-"D3"
+em3NEO_A$dimension<-"D3"
+
+# add "order" variable
+em1NEO_N$order<-as.factor(as.numeric(c(1:13)))
+em1NEO_O$order<-as.factor(as.numeric(c(1:13)))
+em1NEO_C$order<-as.factor(as.numeric(c(1:13)))
+em1NEO_E$order<-as.factor(as.numeric(c(1:13)))
+em1NEO_A$order<-as.factor(as.numeric(c(1:13)))
+
+em2NEO_N$order<-as.factor(as.numeric(c(1:13)))
+em2NEO_O$order<-as.factor(as.numeric(c(1:13)))
+em2NEO_C$order<-as.factor(as.numeric(c(1:13)))
+em2NEO_E$order<-as.factor(as.numeric(c(1:13)))
+em2NEO_A$order<-as.factor(as.numeric(c(1:13)))
+
+em3NEO_N$order<-as.factor(as.numeric(c(1:13)))
+em3NEO_O$order<-as.factor(as.numeric(c(1:13)))
+em3NEO_C$order<-as.factor(as.numeric(c(1:13)))
+em3NEO_E$order<-as.factor(as.numeric(c(1:13)))
+em3NEO_A$order<-as.factor(as.numeric(c(1:13)))
+
+emNEO_trends<-rbind(em1NEO_N,em1NEO_O,em1NEO_C,em1NEO_E,em1NEO_A,
+                    em2NEO_N,em2NEO_O,em2NEO_C,em2NEO_E,em2NEO_A,
+                    em3NEO_N,em3NEO_O,em3NEO_C,em3NEO_E,em3NEO_A)
+emNEO_trends$trait<-factor(emNEO_trends$trait,
+                            levels=c("Neuroticism", "Openness", "Conscientiousness", 
+                                     "Extraversion", "Agreeableness"))
+```
+
+
+```{r, echo=FALSE}
+
+ggplot(emNEO_trends, aes(x= order, y= trend))+
+  geom_hline(yintercept = 0, color= "darkred", linetype= "dashed", linewidth= 0.1)+
+  geom_point(aes(color= cont),  size= 2)+ #, alpha=abs(trend)
+  geom_errorbar(aes(ymin= lower.CL, ymax=upper.CL, color=cont  ), width= 0.3, linewidth= .8)+ #alpha=abs(trend)),
+  scale_color_manual("Condition", breaks = cont_list, values=my_pal[1:13])+
+  scale_x_discrete(NULL, breaks=c(1:13), labels=NULL)+
+  scale_y_continuous("Estimate", limits = c(-0.0035, 0.0035), breaks = c(-0.002, 0, 0.002))+
+  #scale_alpha_discrete(values= c(0.2, 1))+
+  # ylim(-.4, .4)+
+  facet_grid(rows = vars(trait), cols = vars(dimension), scales = "fixed")+
+  #theme_classic()+
+  theme(panel.background = element_rect(fill = "white", colour = "black"), panel.grid.major.y = element_blank(),
+        strip.text = element_text(size=9, face = "bold"), strip.background = element_blank(),
+        legend.text = element_text(size=8), legend.key = element_rect(fill = "white", color = "white"),
+        legend.position = "bottom")+
+  guides(color=guide_legend(nrow=2,byrow=TRUE)) 
+
+ggsave(
+  paste0(fig_path, "paper_fig_2.svg"),
+  plot = last_plot(),
+  device = NULL,
+  path = NULL,
+  scale = 1,
+  width = 7,
+  height = 7,
+  units = c("in"),
+  dpi = 300,
+  limitsize = TRUE,
+  bg = NULL)
+
+
+#dev.off()
+```
+
+
