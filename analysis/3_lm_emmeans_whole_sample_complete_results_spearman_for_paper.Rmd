@@ -1,0 +1,347 @@
+---
+title: "HCP tasks trait complete results"
+output: pdf_document
+fontsize: 10pt
+date: "`r Sys.Date()`"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options("width"=95)
+options(scipen = 999, digits = 7) 
+```
+
+
+
+```{r load packages and data, echo= FALSE, include=FALSE}
+
+#setwd("/")
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(dplyr)
+library(tinytex)
+
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(MetBrewer)
+library(viridis)
+
+library(lmerTest)
+library(emmeans)
+library(MASS)
+
+df<-read.csv("/hcp_task_trait/data/hcp_analysis_df_spearman.csv", sep = ",")
+
+df$sub<-as.factor(c(df$sub))
+df$cont<-gsub("tom", "ToM", df$cont)
+df$cont<-gsub("rel", "relational", df$cont)
+df$cont<-gsub("avg", "motor", df$cont)
+df$cont<-gsub("0bk", "0back", df$cont)
+df$cont<-gsub("2bk", "2back", df$cont)
+cont_list<- levels(as.factor(df$cont))
+
+df$Gender<-as.factor(c(df$Gender))
+df$cont<-as.factor(c(df$cont))
+df$Mother_ID<-as.factor(c(df$Mother_ID))
+df$Father_ID<-as.factor(c(df$Father_ID))
+df$Family_ID<-as.factor(c(df$Family_ID))
+df$Zygosity<-as.factor(c(df$Zygosity))
+
+
+df$corr_g1<-as.numeric(df$corr_g1)
+df$corr_g2<-as.numeric(df$corr_g2)
+df$corr_g3<-as.numeric(df$corr_g3)
+df$motion<-as.numeric(df$motion)
+
+```
+
+```{r create sumdf to keep means, sd se etc handy, echo=FALSE}
+my_sum1 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g1)),
+    sd=sd(as.numeric(corr_g1))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+
+my_sum2 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g2)),
+    sd=sd(as.numeric(corr_g2))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+my_sum3 <- df %>%
+  group_by(cont) %>%
+  summarise( 
+    n=n(),
+    mean=mean(as.numeric(corr_g3)),
+    sd=sd(as.numeric(corr_g3))
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1)) 
+
+sumdf<-data.frame(cont=my_sum1$cont,
+                   g1_mean=my_sum1$mean, g2_mean=my_sum2$mean, g3_mean=my_sum3$mean,
+                   g1_sd=my_sum1$sd, g2_sd=my_sum2$sd, g3_sd=my_sum3$sd,
+                   g1_se=my_sum1$se, g2_se=my_sum2$se, g3_se=my_sum3$se)
+```
+
+
+## Main dimension-specific ANOVAs
+```{r, echo=T}
+
+
+mod1<-lmerTest::lmer(corr_g1~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+
+
+
+mod2<-lmerTest::lmer(corr_g2~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+
+
+mod3<-lmerTest::lmer(corr_g3~ (1|sub)+ (1|Family_ID)+ cont + Age + Gender + motion +  
+                         Neuroticism + Openness + Conscientiousness +Extraversion + Agreeableness +
+                         cont:Neuroticism+ cont:Openness+ cont:Conscientiousness + cont:Extraversion+   
+                         cont:Agreeableness, data = df)
+
+```
+
+### D1 
+```{r, echo=F}
+anova1<-anova(mod1)
+p1<-kable(anova(mod1), "simple",  align= "lrrrrrr", digits = 7 )
+p1
+
+```
+
+### D2 
+```{r, echo=F}
+anova2<-anova(mod2)
+p2<-kable(anova(mod2), "simple",  align= "lrrrrrr", digits = 7 )
+p2
+```
+
+### D3
+```{r, echo=F}
+anova3<-anova(mod3)
+p3<-kable(anova(mod3), "simple",  align= "lrrrrrr", digits = 7 )
+p3
+
+```
+
+\newpage
+## contrast-specific trait slopes
+### D1 contrast locations, and contrast-specific slopes
+```{r, echo=T}
+
+emm_options(lmerTest.limit = 13081, lmer.df = "satterthwaite")
+em1cont<-emmeans(mod1, ~ cont, type = "response")
+em1contpairs<-pairs(em1cont, infer = TRUE)
+
+em1NEO_N<-emtrends(mod1, "cont",  var="Neuroticism", adjust="none", infer = TRUE)
+em1NEO_O<-emtrends(mod1, "cont",  var="Openness", adjust = "none", infer = TRUE)
+em1NEO_C<-emtrends(mod1, "cont",  var="Conscientiousness", adjust = "none", infer = TRUE)
+em1NEO_E<-emtrends(mod1, "cont",  var="Extraversion", adjust = "none", infer = TRUE)
+em1NEO_A<-emtrends(mod1, "cont",  var="Agreeableness", adjust = "none", infer = TRUE)
+```
+
+```{r, echo=F}
+
+kable(em1cont, "simple",  align= "lrrrrr", digits = 4 )
+
+kable(em1NEO_N, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em1NEO_O, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em1NEO_C, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em1NEO_E, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em1NEO_A, "simple",  align= "lrrrrrrr", digits = 7 )
+
+```
+
+\newpage
+### D2 contrast locations, and contrast-specific slopes
+```{r, echo= T}
+
+emm_options(lmerTest.limit = 13201, lmer.df = "satterthwaite")
+em2cont<-emmeans(mod2, ~ cont, type = "response")
+em2contpairs<-pairs(em2cont, adjust = "bonferroni", infer = TRUE)
+
+em2NEO_N<-emtrends(mod2, "cont",  var="Neuroticism", adjust="none", infer = TRUE)
+em2NEO_O<-emtrends(mod2, "cont", var="Openness", adjust = "none", infer = TRUE)
+em2NEO_C<-emtrends(mod2, "cont",  var="Conscientiousness", adjust = "none", infer = TRUE)
+em2NEO_E<-emtrends(mod2, "cont",  var="Extraversion", adjust = "none", infer = TRUE)
+em2NEO_A<-emtrends(mod2, "cont",  var="Agreeableness", adjust = "none", infer = TRUE)
+```
+
+```{r, echo=F}
+kable(em2cont, "simple",  align= "lrrrrr", digits = 4 )
+
+kable(em2NEO_N, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em2NEO_O, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em2NEO_C, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em2NEO_E, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em2NEO_A, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D3 contrast locations, and contrast-specific slopes
+```{r, echo= T}
+emm_options(lmerTest.limit = 13201, lmer.df = "satterthwaite")
+em3cont<-emmeans(mod3, ~ cont, type = "response")
+em3contpairs<-pairs(em3cont, adjust = "bonferroni", infer = TRUE)
+
+em3NEO_N<-emtrends(mod3, "cont",  var="Neuroticism", adjust="none", infer = TRUE)
+em3NEO_O<-emtrends(mod3, "cont",  var="Openness", adjust = "none", infer = TRUE)
+em3NEO_C<-emtrends(mod3, "cont",  var="Conscientiousness", adjust = "none", infer = TRUE)
+em3NEO_E<-emtrends(mod3, "cont",  var="Extraversion", adjust = "none", infer = TRUE)
+em3NEO_A<-emtrends(mod3, "cont",  var="Agreeableness", adjust = "none", infer = TRUE)
+```
+
+```{r, echo=F}
+kable(em3cont, "simple",  align= "lrrrrr", digits = 4 )
+
+kable(em3NEO_N, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em3NEO_O, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em3NEO_C, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em3NEO_E, "simple",  align= "lrrrrrrr", digits = 7 )
+kable(em3NEO_A, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+## pairwise interaction effects
+### D1
+```{r, echo=T}
+em1int_NEO_N<-emtrends(mod1, pairwise~cont,  var="Neuroticism", adjust="none", infer = TRUE)
+em1int_NEO_O<-emtrends(mod1, pairwise~cont, var="Openness", adjust = "none", infer = TRUE)
+em1int_NEO_C<-emtrends(mod1, pairwise~cont,  var="Conscientiousness", adjust="none", infer = TRUE)
+em1int_NEO_E<-emtrends(mod1, pairwise~cont, var="Extraversion", adjust = "none", infer = TRUE) 
+em1int_NEO_A<-emtrends(mod1, pairwise~cont,  var="Agreeableness", adjust="none", infer = TRUE)
+```
+
+\newpage
+### D1 contrast- pairwise trait effects : Neuroticism 
+```{r, echo=T}
+kable(em1int_NEO_N$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D1 contrast- pairwise trait effects : Openness
+```{r, echo=T}
+kable(em1int_NEO_O$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D1 contrast- pairwise trait effects : Conscientiousness 
+```{r, echo=T}
+kable(em1int_NEO_C$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D1 contrast- pairwise trait effects : Extraversion
+```{r, echo=T}
+kable(em1int_NEO_E$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D1 contrast- pairwise trait effects :Agreeablness
+```{r, echo=T}
+kable(em1int_NEO_A$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+## D2
+```{r, echo=T}
+em2int_NEO_N<-emtrends(mod2, pairwise~cont,  var="Neuroticism", adjust="none", infer = TRUE)
+em2int_NEO_O<-emtrends(mod2, pairwise~cont, var="Openness", adjust = "none", infer = TRUE)
+em2int_NEO_C<-emtrends(mod2, pairwise~cont,  var="Conscientiousness", adjust="none", infer = TRUE)
+em2int_NEO_E<-emtrends(mod2, pairwise~cont, var="Extraversion", adjust = "none", infer = TRUE) 
+em2int_NEO_A<-emtrends(mod2, pairwise~cont,  var="Agreeableness", adjust="none", infer = TRUE)
+
+```
+
+\newpage
+### D2 contrast- pairwise trait effects : Neuroticism 
+```{r, echo=T}
+kable(em2int_NEO_N$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D2 contrast- pairwise trait effects : Openness
+```{r, echo=T}
+kable(em2int_NEO_O$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D2 contrast- pairwise trait effects : Conscientiousness 
+```{r, echo=T}
+kable(em2int_NEO_C$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D2 contrast- pairwise trait effects : Extraversion
+```{r, echo=T}
+kable(em2int_NEO_E$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D2 contrast- pairwise trait effects :Agreeablness
+```{r, echo=T}
+kable(em2int_NEO_A$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+## D3
+```{r, echo=T}
+em3int_NEO_N<-emtrends(mod3, pairwise~cont,  var="Neuroticism", adjust="none", infer = TRUE)
+em3int_NEO_O<-emtrends(mod3, pairwise~cont, var="Openness", adjust = "none", infer = TRUE)
+em3int_NEO_C<-emtrends(mod3, pairwise~cont,  var="Conscientiousness", adjust="none", infer = TRUE)
+em3int_NEO_E<-emtrends(mod3, pairwise~cont, var="Extraversion", adjust = "none", infer = TRUE) 
+em3int_NEO_A<-emtrends(mod3, pairwise~cont,  var="Agreeableness", adjust="none", infer = TRUE)
+```
+
+\newpage
+### D3 contrast- pairwise trait effects : Neuroticism 
+```{r, echo=T}
+kable(em3int_NEO_N$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D3 contrast- pairwise trait effects : Openness
+```{r, echo=T}
+kable(em3int_NEO_O$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D3 contrast- pairwise trait effects : Conscientiousness 
+```{r, echo=T}
+kable(em3int_NEO_C$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D3 contrast- pairwise trait effects : Extraversion
+```{r, echo=T}
+kable(em3int_NEO_E$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
+\newpage
+### D3 contrast- pairwise trait effects :Agreeablness
+```{r, echo=T}
+kable(em3int_NEO_A$contrasts, "simple",  align= "lrrrrrrr", digits = 7 )
+```
+
